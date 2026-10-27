@@ -133,6 +133,13 @@ function legacyBlock(text) {
   return b && e && e.index > b.index ? t.slice(b.index, e.index + e[0].length) : undefined;
 }
 
+// Seed files shipped by 0.1–0.3, whose state did not record seeds.
+const LEGACY_SEEDS = [
+  '.claude/settings.json', 'docs/ARCHITECTURE.md', 'docs/DEPLOY.md', 'docs/HANDOFF.md',
+  'docs/PROJECT.md', 'docs/decisions/ADR-000-template.md', 'docs/decisions/README.md',
+  'docs/design/README.md', 'docs/history/README.md', 'docs/product/README.md',
+];
+
 const MERGE_MARKERS = /^(?:<<<<<<<(?: |$)|=======$|>>>>>>>(?: |$))/m;
 
 // A conflict waits while <file>.kit-new exists. Deleting it means "merged":
@@ -196,7 +203,7 @@ function sync(projectDir, { init, dryRun, force }) {
   const state = loadState(projectDir);
   if (!init && !state.version) die(`${projectDir} has no ${STATE_FILE}; run init first`);
   const run = new Run(projectDir, { dryRun, force });
-  const newState = { version: VERSION, updated: new Date().toISOString().slice(0, 10), files: {}, pending: { ...state.pending } };
+  const newState = { version: VERSION, updated: new Date().toISOString().slice(0, 10), files: {}, pending: { ...state.pending }, seeds: [] };
   const tplFiles = walk(TEMPLATE);
 
   // Preflight all tracked paths before any mutation.
@@ -208,9 +215,13 @@ function sync(projectDir, { init, dryRun, force }) {
     const tpl = read(path.join(TEMPLATE, rel));
     if (kind === 'managed') syncOwned(run, rel, tpl, state, newState, false);
     else if (kind === 'block') syncOwned(run, rel, tpl, state, newState, true);
-    else if (init) {
-      if (exists(path.join(projectDir, rel))) run.note('kept', rel, 'exists, project-owned');
-      else { run.write(rel, fillPlaceholders(tpl, projectDir)); run.note('created', rel); }
+    else {
+      // Seed: created once. Update adds only seeds that are new in the kit,
+      // so a file the owner deleted on purpose is not recreated.
+      newState.seeds.push(rel);
+      const known = (state.seeds ?? (state.version ? LEGACY_SEEDS : [])).includes(rel);
+      if (exists(safePath(projectDir, rel))) { if (init) run.note('kept', rel, 'exists, project-owned'); }
+      else if (init || !known) { run.write(rel, fillPlaceholders(tpl, projectDir)); run.note('created', rel, init ? '' : 'new in the kit'); }
     }
   }
 

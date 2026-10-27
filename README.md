@@ -21,8 +21,8 @@ tool" in `template/AGENTS.md`).
 | `CLAUDE.md` | imports `AGENTS.md` + Claude notes | kit block only |
 | `.claude/agents/*.md` | 10 subagents | yes, unless edited locally |
 | `.claude/commands/*.md` | `/start` `/feature` `/adr` `/review` `/finish` `/handoff` `/adopt` | yes, unless edited locally |
-| `.claude/settings.json` | denies reading `.env` | no (created once) |
-| `docs/` | PROJECT, ARCHITECTURE, HANDOFF, DEPLOY, decisions/, product/, history/, design/ | no (created once) |
+| `.claude/settings.json` | denies reading `.env` | no (created once; seeds new in the kit are added) |
+| `docs/` | PROJECT, ARCHITECTURE, HANDOFF, DEPLOY, decisions/, product/, history/, design/ | no (created once; seeds new in the kit are added) |
 | `.claude/dev-kit.json` | installed version and file hashes | written by the script |
 
 Subagents: `product-manager`, `architect`, `backend-dev`,

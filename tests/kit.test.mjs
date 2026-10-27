@@ -170,3 +170,28 @@ test('0.3 state without pending field is accepted', (t) => {
   put(f.project, '.claude/dev-kit.json', JSON.stringify(st));
   assert.equal(f.run('update').status, 0);
 });
+test('new seed files reach installed projects; deleted seeds stay deleted', (t) => {
+  const f = fixture(t);
+  f.run('init');
+  fs.unlinkSync(path.join(f.project, 'docs/DEPLOY.md'));
+  put(f.kit, 'template/docs/NEW.md', 'new seed');
+  assert.equal(f.run('update').status, 0);
+  assert.equal(get(f.project, 'docs/NEW.md'), 'new seed');
+  assert.ok(!fs.existsSync(path.join(f.project, 'docs/DEPLOY.md')));
+  fs.unlinkSync(path.join(f.project, 'docs/NEW.md'));
+  f.run('update');
+  assert.ok(!fs.existsSync(path.join(f.project, 'docs/NEW.md')));
+});
+test('0.3 state: missing old seeds are not recreated, new ones are added', (t) => {
+  const f = fixture(t);
+  f.run('init');
+  const st = state(f.project);
+  delete st.seeds;
+  st.version = '0.3.0';
+  put(f.project, '.claude/dev-kit.json', JSON.stringify(st));
+  fs.unlinkSync(path.join(f.project, 'docs/DEPLOY.md'));
+  fs.unlinkSync(path.join(f.project, 'docs/DOCUMENTATION.md'));
+  assert.equal(f.run('update').status, 0);
+  assert.ok(!fs.existsSync(path.join(f.project, 'docs/DEPLOY.md')));
+  assert.ok(fs.existsSync(path.join(f.project, 'docs/DOCUMENTATION.md')));
+});

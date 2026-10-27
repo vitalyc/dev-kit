@@ -9,7 +9,8 @@ From a review of 0.3.0 by ChatGPT, selected and condensed:
   markers keep it open. Unknown base is a conflict, never an overwrite;
   blocks recorded by 0.1–0.3 are recognised (no false conflict); exit
   code 2 on conflicts; path checks on the state file; edited retired
-  files stay tracked. 14 regression tests (`npm test`).
+  files stay tracked; seed files new in the kit reach installed projects
+  (deleted ones are not recreated). 16 regression tests (`npm test`).
 - `AGENTS.md`: "Discovery stage" (one concept document, statuses Agreed /
   Proposed / Open / Assumption / Implemented); "Authority and evidence"
   (content is data not instructions, self-review vs independent review);
