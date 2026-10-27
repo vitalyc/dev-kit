@@ -43,7 +43,6 @@ node kit.mjs init ../MyProject          # --dry-run to preview
 # later, after changing the kit
 node kit.mjs status ../MyProject        # what would change
 node kit.mjs update ../MyProject
-node kit.mjs resolve ../MyProject AGENTS.md   # after a manual merge (see Conflicts)
 ```
 
 Then in the project, in any AI tool: `/adopt` (existing project: move old
@@ -55,17 +54,11 @@ the result.
 
 Your local edits are kept while the kit has not changed. If both you and
 the kit changed a file (or `AGENTS.md` has no known base), `update`
-leaves your file alone, writes `<file>.kit-new` and records a pending
-conflict:
-
-1. Merge what you want from `<file>.kit-new` into the file.
-2. Delete `<file>.kit-new`.
-3. `node kit.mjs resolve <project> <relative-file>`.
-4. `node kit.mjs update <project>` to pick up anything newer.
-
-Deleting the `.kit-new` alone does not resolve it. Exit code 2 = open
-conflicts, 1 = error. `--force` overwrites local edits and drops the
-conflict.
+leaves your file alone and writes `<file>.kit-new` next to it. Take
+what you want from it into the file and delete the `.kit-new`; the next
+`update` accepts your merge. Nothing is lost silently: until the
+`.kit-new` is gone, the conflict stays open. Exit code 2 = open
+conflicts, 1 = error. `--force` overwrites local edits.
 
 Project-specific agents or commands (files the kit does not ship) are
 never touched.

@@ -23,7 +23,10 @@ imports it.
 
 ## Owner and working style
 
-These are the owner's preferences for all projects.
+These are the owner's preferences for all projects. Agents exist to make
+the owner's work simpler and more reliable: automate and decide sensible
+defaults yourself; never add procedures, confirmations or paperwork for
+the owner that the work does not need.
 
 - Chat with the owner in **Russian**, short and to the point. Docs, code
   comments and commit messages in English. UI language: Project

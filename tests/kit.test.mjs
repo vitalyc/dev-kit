@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -79,7 +80,7 @@ test('untouched files update; project tail survives block update', (t) => {
   assert.match(get(f.project, rel), /NEW/);
   assert.match(get(f.project, 'AGENTS.md'), /CUSTOM TAIL/);
 });
-test('conflict persists, preserves base and edited sidecar, resolves explicitly', (t) => {
+test('conflict waits for the .kit-new, deleting it accepts the merge', (t) => {
   const f = fixture(t);
   f.run('init');
   const base = state(f.project).files[rel];
@@ -88,15 +89,38 @@ test('conflict persists, preserves base and edited sidecar, resolves explicitly'
   assert.equal(f.run('update').status, 2);
   assert.equal(state(f.project).files[rel], base);
   put(f.project, rel + '.kit-new', get(f.project, rel + '.kit-new') + '\nEDITED PROPOSAL');
-  assert.equal(f.run('status').status, 2);
   assert.equal(f.run('update').status, 2);
   assert.match(get(f.project, rel + '.kit-new'), /EDITED PROPOSAL/);
-  assert.equal(f.run('resolve', rel).status, 1);
+  put(f.project, rel, get(f.project, rel) + '\nUPSTREAM'); // owner merges
+  fs.unlinkSync(path.join(f.project, rel + '.kit-new'));
+  assert.equal(f.run('update').status, 0);
+  assert.match(get(f.project, rel), /LOCAL\nUPSTREAM/);
+  assert.deepEqual(state(f.project).pending, {});
+  assert.equal(f.run('update').status, 0); // merge stays, no new conflict
+  assert.match(get(f.project, rel), /LOCAL/);
+});
+test('merge markers keep the conflict open', (t) => {
+  const f = fixture(t);
+  f.run('init');
+  put(f.project, rel, 'local');
+  put(f.kit, 'template/' + rel, 'upstream');
+  assert.equal(f.run('update').status, 2);
+  put(f.project, rel, '<<<<<<< mine\nlocal\n=======\nupstream\n>>>>>>> kit\n');
   fs.unlinkSync(path.join(f.project, rel + '.kit-new'));
   assert.equal(f.run('update').status, 2);
-  assert.equal(f.run('resolve', rel).status, 0);
+});
+test('block recorded by 0.3 (blank line after end marker) updates without conflict', (t) => {
+  const f = fixture(t);
+  f.run('init');
+  const text = get(f.project, 'AGENTS.md');
+  const end = text.indexOf('<!-- dev-kit:end -->');
+  const legacy = text.slice(text.indexOf('<!-- dev-kit:begin'), end + '<!-- dev-kit:end -->\n'.length);
+  const st = state(f.project);
+  st.files['AGENTS.md'] = crypto.createHash('sha256').update(legacy).digest('hex').slice(0, 16);
+  put(f.project, '.claude/dev-kit.json', JSON.stringify(st));
+  put(f.kit, 'template/AGENTS.md', get(f.kit, 'template/AGENTS.md').replace('## Core principle', '## Core principle!'));
   assert.equal(f.run('update').status, 0);
-  assert.match(get(f.project, rel), /LOCAL/);
+  assert.match(get(f.project, 'AGENTS.md'), /Core principle!/);
 });
 test('force replaces managed edits and clears conflict', (t) => {
   const f = fixture(t);

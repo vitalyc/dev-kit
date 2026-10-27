@@ -114,7 +114,7 @@ class Run {
 //   local == kit                 -> ok
 //   kit unchanged since base     -> local edits are kept ("custom")
 //   local untouched since base   -> replaced with the new kit version
-//   both changed                 -> CONFLICT: preserve base until explicit resolve.
+//   both changed                 -> CONFLICT: <file>.kit-new; base moves only after the owner merges
 function decide(run, rel, localText, kitText, base) {
   const lh = hash(localText), kh = hash(kitText);
   if (lh === kh) return 'ok';
@@ -124,20 +124,42 @@ function decide(run, rel, localText, kitText, base) {
   return 'conflict';
 }
 
+// 0.1–0.3 matched markers with \s*, so a block hash could include the
+// blank lines after the end marker. Used only to recognise old bases.
+function legacyBlock(text) {
+  const t = norm(text);
+  const b = t.match(/^<!-- dev-kit:begin.*-->\s*$/m);
+  const e = t.match(/^<!-- dev-kit:end -->\s*$/m);
+  return b && e && e.index > b.index ? t.slice(b.index, e.index + e[0].length) : undefined;
+}
+
+const MERGE_MARKERS = /^(?:<<<<<<<(?: |$)|=======$|>>>>>>>(?: |$))/m;
+
+// A conflict waits while <file>.kit-new exists. Deleting it means "merged":
+// the next update accepts the file as it is — no extra command.
 function syncOwned(run, rel, tpl, state, newState, block) {
   const full = safePath(run.dir, rel);
   const sidecar = safePath(run.dir, rel + '.kit-new');
   const incoming = block ? splitBlock(tpl)?.block : tpl;
   if (incoming === undefined) die('invalid template markers: ' + rel);
-  const base = state.files[rel];
-  const pending = state.pending[rel];
+  let base = state.files[rel];
+  let pending = state.pending[rel];
+  if (!pending && exists(sidecar)) pending = { incoming: hash(incoming) };
   if (base !== undefined) newState.files[rel] = base;
-  if (!run.force && (pending || exists(sidecar))) {
-    newState.pending[rel] = pending ?? { incoming: hash(incoming) };
-    run.note('CONFLICT', rel, 'unresolved; merge, delete .kit-new, then run resolve');
-    return;
-  }
   delete newState.pending[rel];
+
+  if (pending && !run.force) {
+    const content = exists(full) ? read(full) : '';
+    const problem = exists(sidecar) ? 'waiting: merge ' + rel + '.kit-new into the file, then delete it'
+      : MERGE_MARKERS.test(content) ? 'merge markers (<<<<<<<) left in the file'
+      : block && !splitBlock(content) ? 'dev-kit markers missing in the file'
+      : null;
+    if (problem) { newState.pending[rel] = pending; run.note('CONFLICT', rel, problem); return; }
+    base = pending.incoming;                       // the owner merged it
+    newState.files[rel] = base;
+    run.note('merged', rel, 'your merge accepted');
+  }
+
   if (!exists(full)) {
     if (base && !run.force) { run.note('skipped', rel, 'deleted locally; --force restores it'); return; }
     run.write(rel, tpl); newState.files[rel] = hash(incoming); run.note('added', rel);
@@ -148,38 +170,25 @@ function syncOwned(run, rel, tpl, state, newState, block) {
   const parts = block ? splitBlock(local) : null;
   const localOwned = block ? parts?.block : local;
   const merged = block && parts ? parts.before + incoming + parts.after : tpl;
+  if (block && localOwned !== undefined && base !== undefined && base !== hash(localOwned)) {
+    if (hash(legacyBlock(local) ?? '') === base) base = hash(localOwned);
+    else if (hash(legacyBlock(tpl) ?? '') === base) base = hash(incoming);
+  }
   // Unknown base is a conflict, never permission to replace existing rules.
   const action = localOwned === undefined ? 'conflict' : decide(run, rel, localOwned, incoming, base);
   if (action === 'conflict') {
     run.write(rel + '.kit-new', merged);
     newState.pending[rel] = { incoming: hash(incoming) };
-    run.note('CONFLICT', rel, 'local content preserved; proposed version in ' + rel + '.kit-new');
+    run.note('CONFLICT', rel, 'your version kept; kit version in ' + rel + '.kit-new — merge, then delete it');
     return;
   }
   if (action === 'custom') run.note('custom', rel, 'local edits kept');
   else {
     if (action === 'update') run.write(rel, merged);
     newState.files[rel] = hash(incoming);
-    run.note(action === 'ok' ? 'ok' : 'updated', rel);
+    if (action === 'update' || !run.log.some(([x, r]) => x === 'merged' && r === rel)) run.note(action === 'ok' ? 'ok' : 'updated', rel);
   }
   if (run.force && exists(sidecar)) run.remove(rel + '.kit-new');
-}
-
-function resolve(projectDir, rel, dryRun) {
-  const state = loadState(projectDir);
-  const full = safePath(projectDir, rel);
-  safePath(projectDir, STATE_FILE);
-  const pending = state.pending[rel];
-  if (!pending || !/^[a-f0-9]{16}$/.test(pending.incoming)) die('no valid pending conflict: ' + rel);
-  if (exists(safePath(projectDir, rel + '.kit-new'))) die('merge and delete ' + rel + '.kit-new first');
-  if (!exists(full)) die('merged file is missing: ' + rel);
-  const content = read(full);
-  if (/^(?:<<<<<<<(?: |$)|=======$|>>>>>>>(?: |$))/m.test(content)) die('merge markers remain: ' + rel);
-  if (kindOf(rel) === 'block' && !splitBlock(content)) die('dev-kit markers missing: ' + rel);
-  state.files[rel] = pending.incoming;
-  delete state.pending[rel];
-  if (!dryRun) fs.writeFileSync(path.join(projectDir, STATE_FILE), JSON.stringify(state, null, 2) + '\n');
-  console.log((dryRun ? 'would resolve ' : 'resolved ') + rel + '; run update to check newer templates');
 }
 
 function sync(projectDir, { init, dryRun, force }) {
@@ -209,7 +218,13 @@ function sync(projectDir, { init, dryRun, force }) {
   for (const [rel, h] of Object.entries(state.files)) {
     if (tplFiles.includes(rel) || kindOf(rel) !== 'managed') continue;
     const full = safePath(projectDir, rel);
-    if (state.pending[rel]) { newState.files[rel] = h; run.note('CONFLICT', rel, 'resolve before removing retired template'); continue; }
+    if (state.pending[rel]) {
+      newState.files[rel] = h;
+      if (exists(safePath(projectDir, rel + '.kit-new'))) { run.note('CONFLICT', rel, 'merge and delete ' + rel + '.kit-new first'); continue; }
+      delete newState.pending[rel];
+      run.note('orphan', rel, 'no longer in the kit, your version kept');
+      continue;
+    }
     if (!exists(full)) continue;
     if (hash(read(full)) === h || force) { run.remove(rel); run.note('removed', rel, 'no longer in the kit'); }
     else { newState.files[rel] = h; run.note('orphan', rel, 'no longer in the kit, edited locally — kept'); }
@@ -226,7 +241,7 @@ function sync(projectDir, { init, dryRun, force }) {
   console.log(`dev-kit ${state.version ?? '(none)'} → ${VERSION}  in ${path.resolve(projectDir)}\n`);
   run.print();
   const conflicts = Object.keys(newState.pending).length;
-  if (conflicts) { console.log('\n  Conflicts remain: merge each .kit-new, delete it, then run resolve <project-dir> <relative-file>.'); process.exitCode = 2; }
+  if (conflicts) { console.log('\n  Conflicts: merge what you want from each *.kit-new into the file and delete the *.kit-new; the next update accepts it.'); process.exitCode = 2; }
 }
 
 function status(projectDir) {
@@ -248,12 +263,10 @@ const opts = { dryRun: flags.has('--dry-run'), force: flags.has('--force') };
 switch (cmd) {
   case 'init': sync(target ?? die('usage: node kit.mjs init <project-dir>'), { ...opts, init: true }); break;
   case 'update': sync(target ?? die('usage: node kit.mjs update <project-dir>'), { ...opts, init: false }); break;
-  case 'resolve': resolve(target ?? die('usage: node kit.mjs resolve <project-dir> <relative-file>'), rest.filter(a => !a.startsWith('--'))[1] ?? die('relative file required'), opts.dryRun); break;
   case 'status': status(target ?? die('usage: node kit.mjs status <project-dir>')); break;
   default:
     console.log(`dev-kit ${VERSION}
   node kit.mjs init   <project-dir> [--dry-run]           install into a project
   node kit.mjs update <project-dir> [--dry-run] [--force] update kit-owned files
-  node kit.mjs status <project-dir>                       what update would do
-  node kit.mjs resolve <project-dir> <relative-file>       accept a manual merge`);
+  node kit.mjs status <project-dir>                       what update would do`);
 }
