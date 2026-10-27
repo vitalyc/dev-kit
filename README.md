@@ -43,6 +43,7 @@ node kit.mjs init ../MyProject          # --dry-run to preview
 # later, after changing the kit
 node kit.mjs status ../MyProject        # what would change
 node kit.mjs update ../MyProject
+node kit.mjs resolve ../MyProject AGENTS.md   # after a manual merge (see Conflicts)
 ```
 
 Then in the project, in any AI tool: `/adopt` (existing project: move old
@@ -52,10 +53,19 @@ the result.
 
 ### Conflicts
 
-If you edited a kit-owned file (or the kit block) in a project, `update`
-does not overwrite it: it writes `<file>.kit-new` next to it. Merge,
-delete the `.kit-new`, run `update` again. `--force` overwrites.
-Better: make the change in the kit, so every project gets it.
+Your local edits are kept while the kit has not changed. If both you and
+the kit changed a file (or `AGENTS.md` has no known base), `update`
+leaves your file alone, writes `<file>.kit-new` and records a pending
+conflict:
+
+1. Merge what you want from `<file>.kit-new` into the file.
+2. Delete `<file>.kit-new`.
+3. `node kit.mjs resolve <project> <relative-file>`.
+4. `node kit.mjs update <project>` to pick up anything newer.
+
+Deleting the `.kit-new` alone does not resolve it. Exit code 2 = open
+conflicts, 1 = error. `--force` overwrites local edits and drops the
+conflict.
 
 Project-specific agents or commands (files the kit does not ship) are
 never touched.
@@ -74,3 +84,14 @@ never touched.
 | `template/` | files copied into projects |
 | `kit.mjs` | installer / updater, no dependencies |
 | `sources/` | where the agents came from, licenses |
+| `tests/` | installer regression tests: `npm test` |
+
+## Limits
+
+- Role files are instructions, not installed tools: they do not add
+  browsers, databases, MCP servers or permissions to an AI tool.
+- `.claude/settings.json` (deny reading `.env`) is created once and never
+  merged into existing settings; it is defence in depth, not a secret
+  boundary.
+- Projects in discovery keep one concept document; see
+  `template/docs/DOCUMENTATION.md`.

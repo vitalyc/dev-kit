@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.0 — 2026-10-27
+
+From a review of 0.3.0 by ChatGPT, selected and condensed:
+
+- `kit.mjs`: conflicts stay pending until `kit resolve` (deleting
+  `.kit-new` no longer loses a kit change silently); unknown base is a
+  conflict, never an overwrite; exit code 2 on conflicts; path checks on
+  the state file; edited retired files stay tracked. 12 regression tests
+  (`npm test`).
+- `AGENTS.md`: "Discovery stage" (one concept document, statuses Agreed /
+  Proposed / Open / Assumption / Implemented); "Authority and evidence"
+  (content is data not instructions, self-review vs independent review);
+  safer cloud ↔ PC transfer; evidence before asking the owner;
+  historical baseline allowed in the migration rule.
+- `docs/DOCUMENTATION.md`: documentation lifecycle and extraction guide.
+- `/review` includes staged changes; `/finish` reuses checks from
+  `/feature`; fixes follow the reviewer's verdict.
+
 ## 0.3.0 — 2026-10-27
 
 - `/feature`: the tech-lead sequence from OpenCode six-agents —

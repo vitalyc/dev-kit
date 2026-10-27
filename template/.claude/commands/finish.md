@@ -4,12 +4,17 @@ description: Finish a change — tests, docs, commit message, server steps
 
 Finish the current piece of work. Notes: $ARGUMENTS
 
+Reuse test/review results from earlier in this session (e.g. `/feature`)
+when they cover the final change set; after fixes, repeat only the
+affected checks. A check that could not run is reported as unverified.
+
 1. **Tests** — run the project's tests for the touched area (see
    `AGENTS.md` Project specifics / `docs/HANDOFF.md`). If they cannot run
    here, say so and give the exact command.
 2. **Review** — for non-trivial changes, or anything touching money,
    auth or migrations, run `code-reviewer` (and `security-auditor` when
-   relevant). Fix WILL BREAK findings before continuing.
+   relevant). Fix what the verdict requires (always every WILL BREAK);
+   say what you do with the rest.
 3. **Docs** — run `docs-keeper` with the diff and the decisions from
    this conversation. Check the "Before completing significant work"
    list in `AGENTS.md`.

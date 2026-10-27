@@ -2,6 +2,9 @@
 
 Describes the CURRENT system. Decisions and their reasons are in
 [decisions/](decisions/README.md); changes over time in [history/](history/).
+Nothing built yet? Say so here and link the proposed design (concept or
+Proposed ADR) — see [DOCUMENTATION.md](DOCUMENTATION.md). The diagram
+below is a placeholder, not a fact.
 
 ## 1. Overview
 

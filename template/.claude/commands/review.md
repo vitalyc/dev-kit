@@ -5,8 +5,9 @@ argument-hint: [commit sha | range | "staged"]
 
 Review target: $ARGUMENTS (empty = uncommitted changes)
 
-1. Determine the change set: uncommitted (`git diff` + untracked files),
-   `--staged`, or the given commit/range.
+1. Determine the change set: uncommitted (`git diff`, `git diff
+   --staged` and untracked files), staged only, or the given
+   commit/range.
 2. Run the `code-reviewer` agent on it with the change's intent.
 3. Also run in parallel, when the diff touches them:
    - `security-auditor` — auth, sessions, roles, uploads, SQL built from

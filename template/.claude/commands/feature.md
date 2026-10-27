@@ -27,10 +27,11 @@ context: it has not seen this chat.
    is unclear).
 5. **Review** — `code-reviewer`; plus `security-auditor` for auth,
    permissions, uploads, input → SQL/HTML, money; plus `ui-reviewer` for
-   screens when the app can run here. Fix every WILL BREAK finding,
-   then re-run the affected tests.
-6. **Docs and commit** — `/finish` (docs-keeper, commit message, server
-   steps).
+   screens when the app can run here. Fix what the verdict requires
+   (always every WILL BREAK), say what you do with the rest, re-run the
+   affected checks.
+6. **Docs and commit** — `/finish`, handing over what was tested and
+   reviewed; those checks are not repeated unless the files changed.
 
 Rules:
 

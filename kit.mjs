@@ -18,8 +18,8 @@ const TEMPLATE = path.join(KIT_DIR, 'template');
 const VERSION = read(path.join(KIT_DIR, 'VERSION')).trim();
 const STATE_FILE = '.claude/dev-kit.json';
 
-const BEGIN_RE = /^<!-- dev-kit:begin.*-->\s*$/m;
-const END_RE = /^<!-- dev-kit:end -->\s*$/m;
+const BEGIN_RE = /^<!-- dev-kit:begin[^\n]*-->[ \t]*$/m;
+const END_RE = /^<!-- dev-kit:end -->[ \t]*$/m;
 
 // What the kit owns, by kind:
 //   managed — whole file belongs to the kit; replaced on update unless edited locally
@@ -68,7 +68,22 @@ function fillPlaceholders(text, projectDir) {
 
 function loadState(projectDir) {
   const f = path.join(projectDir, STATE_FILE);
-  return exists(f) ? JSON.parse(read(f)) : { version: null, files: {} };
+  const state = exists(f) ? JSON.parse(read(f)) : { version: null, files: {} };
+  if (!state.files || typeof state.files !== 'object' || Array.isArray(state.files)) die('invalid state.files');
+  state.pending ??= {};
+  if (typeof state.pending !== 'object' || Array.isArray(state.pending)) die('invalid state.pending');
+  return state;
+}
+
+// Reject state paths and links that could make writes escape the target project.
+function safePath(dir, rel) {
+  if (typeof rel !== 'string' || rel.includes('\\') || rel.includes(':') || rel.startsWith('/') || rel.split('/').some(p => !p || p === '.' || p === '..')) die('unsafe relative path: ' + rel);
+  let current = path.resolve(dir);
+  for (const part of rel.split('/')) {
+    current = path.join(current, part);
+    if (fs.existsSync(current) && fs.lstatSync(current).isSymbolicLink()) die('refusing linked path: ' + rel);
+  }
+  return current;
 }
 
 // ---------- core ----------
@@ -83,11 +98,11 @@ class Run {
   note(action, rel, extra = '') { this.log.push([action, rel, extra]); }
   write(rel, content) {
     if (this.dryRun) return;
-    const full = path.join(this.dir, rel);
+    const full = safePath(this.dir, rel);
     fs.mkdirSync(path.dirname(full), { recursive: true });
     fs.writeFileSync(full, norm(content));
   }
-  remove(rel) { if (!this.dryRun) fs.rmSync(path.join(this.dir, rel)); }
+  remove(rel) { if (!this.dryRun) fs.rmSync(safePath(this.dir, rel)); }
   print() {
     const w = Math.max(8, ...this.log.map(([a]) => a.length));
     for (const [a, r, x] of this.log) console.log(`  ${a.padEnd(w)}  ${r}${x ? '  — ' + x : ''}`);
@@ -99,8 +114,7 @@ class Run {
 //   local == kit                 -> ok
 //   kit unchanged since base     -> local edits are kept ("custom")
 //   local untouched since base   -> replaced with the new kit version
-//   both changed                 -> CONFLICT: new version in <file>.kit-new, base moves on
-//                                   (merge by hand once; later updates keep your merge)
+//   both changed                 -> CONFLICT: preserve base until explicit resolve.
 function decide(run, rel, localText, kitText, base) {
   const lh = hash(localText), kh = hash(kitText);
   if (lh === kh) return 'ok';
@@ -110,42 +124,62 @@ function decide(run, rel, localText, kitText, base) {
   return 'conflict';
 }
 
-function syncManaged(run, rel, tpl, state, newState) {
-  const full = path.join(run.dir, rel);
+function syncOwned(run, rel, tpl, state, newState, block) {
+  const full = safePath(run.dir, rel);
+  const sidecar = safePath(run.dir, rel + '.kit-new');
+  const incoming = block ? splitBlock(tpl)?.block : tpl;
+  if (incoming === undefined) die('invalid template markers: ' + rel);
   const base = state.files[rel];
-  if (!exists(full)) {
-    if (base && !run.force) { run.note('skipped', rel, 'deleted locally; --force restores it'); newState.files[rel] = base; return; }
-    run.write(rel, tpl); newState.files[rel] = hash(tpl); run.note('added', rel); return;
-  }
-  newState.files[rel] = hash(tpl);
-  switch (decide(run, rel, read(full), tpl, base)) {
-    case 'ok': run.note('ok', rel); break;
-    case 'custom': newState.files[rel] = base; run.note('custom', rel, 'edited locally, kit unchanged — kept'); break;
-    case 'update': run.write(rel, tpl); run.note('updated', rel); break;
-    case 'conflict': run.write(rel + '.kit-new', tpl); run.note('CONFLICT', rel, 'edited locally and changed in the kit; new version in ' + rel + '.kit-new'); break;
-  }
-}
-
-function syncBlock(run, rel, tpl, state, newState) {
-  const full = path.join(run.dir, rel);
-  const t = splitBlock(tpl);
-  if (!exists(full)) { run.write(rel, tpl); newState.files[rel] = hash(t.block); run.note('added', rel); return; }
-  const l = splitBlock(read(full));
-  if (!l) {
-    run.write(rel + '.kit-new', tpl);
-    run.note('CONFLICT', rel, 'no dev-kit markers; template in ' + rel + '.kit-new — merge it (or run /adopt)');
+  const pending = state.pending[rel];
+  if (base !== undefined) newState.files[rel] = base;
+  if (!run.force && (pending || exists(sidecar))) {
+    newState.pending[rel] = pending ?? { incoming: hash(incoming) };
+    run.note('CONFLICT', rel, 'unresolved; merge, delete .kit-new, then run resolve');
     return;
   }
-  // No base yet (markers added by hand): the kit's block wins.
-  const base = state.files[rel] ?? hash(l.block);
-  const merged = l.before + t.block + l.after;
-  newState.files[rel] = hash(t.block);
-  switch (decide(run, rel, l.block, t.block, base)) {
-    case 'ok': run.note('ok', rel); break;
-    case 'custom': newState.files[rel] = base; run.note('custom', rel, 'kit block edited locally, kit unchanged — kept'); break;
-    case 'update': run.write(rel, merged); run.note('updated', rel, 'kit block'); break;
-    case 'conflict': run.write(rel + '.kit-new', merged); run.note('CONFLICT', rel, 'kit block edited locally and changed in the kit; merged file in ' + rel + '.kit-new'); break;
+  delete newState.pending[rel];
+  if (!exists(full)) {
+    if (base && !run.force) { run.note('skipped', rel, 'deleted locally; --force restores it'); return; }
+    run.write(rel, tpl); newState.files[rel] = hash(incoming); run.note('added', rel);
+    if (run.force && exists(sidecar)) run.remove(rel + '.kit-new');
+    return;
   }
+  const local = read(full);
+  const parts = block ? splitBlock(local) : null;
+  const localOwned = block ? parts?.block : local;
+  const merged = block && parts ? parts.before + incoming + parts.after : tpl;
+  // Unknown base is a conflict, never permission to replace existing rules.
+  const action = localOwned === undefined ? 'conflict' : decide(run, rel, localOwned, incoming, base);
+  if (action === 'conflict') {
+    run.write(rel + '.kit-new', merged);
+    newState.pending[rel] = { incoming: hash(incoming) };
+    run.note('CONFLICT', rel, 'local content preserved; proposed version in ' + rel + '.kit-new');
+    return;
+  }
+  if (action === 'custom') run.note('custom', rel, 'local edits kept');
+  else {
+    if (action === 'update') run.write(rel, merged);
+    newState.files[rel] = hash(incoming);
+    run.note(action === 'ok' ? 'ok' : 'updated', rel);
+  }
+  if (run.force && exists(sidecar)) run.remove(rel + '.kit-new');
+}
+
+function resolve(projectDir, rel, dryRun) {
+  const state = loadState(projectDir);
+  const full = safePath(projectDir, rel);
+  safePath(projectDir, STATE_FILE);
+  const pending = state.pending[rel];
+  if (!pending || !/^[a-f0-9]{16}$/.test(pending.incoming)) die('no valid pending conflict: ' + rel);
+  if (exists(safePath(projectDir, rel + '.kit-new'))) die('merge and delete ' + rel + '.kit-new first');
+  if (!exists(full)) die('merged file is missing: ' + rel);
+  const content = read(full);
+  if (/^(?:<<<<<<<(?: |$)|=======$|>>>>>>>(?: |$))/m.test(content)) die('merge markers remain: ' + rel);
+  if (kindOf(rel) === 'block' && !splitBlock(content)) die('dev-kit markers missing: ' + rel);
+  state.files[rel] = pending.incoming;
+  delete state.pending[rel];
+  if (!dryRun) fs.writeFileSync(path.join(projectDir, STATE_FILE), JSON.stringify(state, null, 2) + '\n');
+  console.log((dryRun ? 'would resolve ' : 'resolved ') + rel + '; run update to check newer templates');
 }
 
 function sync(projectDir, { init, dryRun, force }) {
@@ -153,14 +187,18 @@ function sync(projectDir, { init, dryRun, force }) {
   const state = loadState(projectDir);
   if (!init && !state.version) die(`${projectDir} has no ${STATE_FILE}; run init first`);
   const run = new Run(projectDir, { dryRun, force });
-  const newState = { version: VERSION, updated: new Date().toISOString().slice(0, 10), files: {} };
+  const newState = { version: VERSION, updated: new Date().toISOString().slice(0, 10), files: {}, pending: { ...state.pending } };
   const tplFiles = walk(TEMPLATE);
 
+  // Preflight all tracked paths before any mutation.
+  for (const rel of [...tplFiles, ...Object.keys(state.files), ...Object.keys(state.pending), STATE_FILE]) {
+    safePath(projectDir, rel); safePath(projectDir, rel + '.kit-new');
+  }
   for (const rel of tplFiles) {
     const kind = kindOf(rel);
     const tpl = read(path.join(TEMPLATE, rel));
-    if (kind === 'managed') syncManaged(run, rel, tpl, state, newState);
-    else if (kind === 'block') syncBlock(run, rel, tpl, state, newState);
+    if (kind === 'managed') syncOwned(run, rel, tpl, state, newState, false);
+    else if (kind === 'block') syncOwned(run, rel, tpl, state, newState, true);
     else if (init) {
       if (exists(path.join(projectDir, rel))) run.note('kept', rel, 'exists, project-owned');
       else { run.write(rel, fillPlaceholders(tpl, projectDir)); run.note('created', rel); }
@@ -170,10 +208,11 @@ function sync(projectDir, { init, dryRun, force }) {
   // Managed files the kit no longer ships.
   for (const [rel, h] of Object.entries(state.files)) {
     if (tplFiles.includes(rel) || kindOf(rel) !== 'managed') continue;
-    const full = path.join(projectDir, rel);
+    const full = safePath(projectDir, rel);
+    if (state.pending[rel]) { newState.files[rel] = h; run.note('CONFLICT', rel, 'resolve before removing retired template'); continue; }
     if (!exists(full)) continue;
     if (hash(read(full)) === h || force) { run.remove(rel); run.note('removed', rel, 'no longer in the kit'); }
-    else { run.note('orphan', rel, 'no longer in the kit, edited locally — kept'); }
+    else { newState.files[rel] = h; run.note('orphan', rel, 'no longer in the kit, edited locally — kept'); }
   }
 
   for (const rel of tplFiles) {
@@ -186,8 +225,8 @@ function sync(projectDir, { init, dryRun, force }) {
   }
   console.log(`dev-kit ${state.version ?? '(none)'} → ${VERSION}  in ${path.resolve(projectDir)}\n`);
   run.print();
-  const conflicts = run.log.filter(([a]) => a === 'CONFLICT').length;
-  if (conflicts) console.log(`\n  ${conflicts} conflict(s): compare *.kit-new with the file, merge, delete *.kit-new, run update again.`);
+  const conflicts = Object.keys(newState.pending).length;
+  if (conflicts) { console.log('\n  Conflicts remain: merge each .kit-new, delete it, then run resolve <project-dir> <relative-file>.'); process.exitCode = 2; }
 }
 
 function status(projectDir) {
@@ -209,10 +248,12 @@ const opts = { dryRun: flags.has('--dry-run'), force: flags.has('--force') };
 switch (cmd) {
   case 'init': sync(target ?? die('usage: node kit.mjs init <project-dir>'), { ...opts, init: true }); break;
   case 'update': sync(target ?? die('usage: node kit.mjs update <project-dir>'), { ...opts, init: false }); break;
+  case 'resolve': resolve(target ?? die('usage: node kit.mjs resolve <project-dir> <relative-file>'), rest.filter(a => !a.startsWith('--'))[1] ?? die('relative file required'), opts.dryRun); break;
   case 'status': status(target ?? die('usage: node kit.mjs status <project-dir>')); break;
   default:
     console.log(`dev-kit ${VERSION}
   node kit.mjs init   <project-dir> [--dry-run]           install into a project
   node kit.mjs update <project-dir> [--dry-run] [--force] update kit-owned files
-  node kit.mjs status <project-dir>                       what update would do`);
+  node kit.mjs status <project-dir>                       what update would do
+  node kit.mjs resolve <project-dir> <relative-file>       accept a manual merge`);
 }

@@ -9,7 +9,9 @@ Discuss before moving anything:
 1. Inventory: list every documentation file (README, docs/, wiki-like
    folders, CHANGELOG, TODO, old AGENTS.md/CLAUDE.md, `.cursor`/other
    agent rule files, comments with decisions).
-2. Classify each useful piece into its canonical home per `AGENTS.md`
+2. A discovery concept (`PRODUCT_CONCEPT.md` or similar) stays whole
+   while it is exploratory; propose extracting only stable sections,
+   keeping statuses and source IDs (`docs/DOCUMENTATION.md`). Classify each useful piece into its canonical home per `AGENTS.md`
    (PROJECT, ARCHITECTURE, product/, design/, decisions/ (ADR), history/,
    HANDOFF, DEPLOY, Project specifics in AGENTS.md).
 3. Propose a migration table: source → target → action (move / merge /

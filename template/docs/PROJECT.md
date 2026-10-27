@@ -29,6 +29,8 @@ What is broken or missing today without this product.
 
 ## 7. Current state ({{YEAR_MONTH}})
 
+- Stage: Discovery / Implementation / Operating (keep one). In
+  discovery, link the concept: [PRODUCT_CONCEPT.md](PRODUCT_CONCEPT.md).
 -
 
 ## 8. Roadmap
