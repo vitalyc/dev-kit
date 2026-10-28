@@ -149,10 +149,11 @@ Do this as part of the same work even if the owner did not ask for it.
 Before implementation a product may live in one concept document,
 `docs/PRODUCT_CONCEPT.md`. Do not split it into empty canonical files.
 
-- Every rule or proposal carries a status: Agreed, Proposed, Open,
-  Assumption or Implemented. Never turn Proposed/Open into an Accepted
-  ADR or a planned table into `ARCHITECTURE.md` (which describes only
-  what exists).
+- Decisions and key rules carry a status (Agreed, Proposed, Open,
+  Assumption, Implemented), e.g. in a decisions table; elsewhere words
+  like "illustrative" or "not finalized" are enough — do not label every
+  line. Never turn Proposed/Open into an Accepted ADR or a planned table
+  into `ARCHITECTURE.md` (which describes only what exists).
 - Extract a section to its canonical home when it is stable or about to
   be built; move the text, leave a link, keep source IDs.
 - How: `docs/DOCUMENTATION.md`.

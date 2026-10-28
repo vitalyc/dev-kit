@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1 — 2026-10-28
+
+- Discovery: statuses on decisions and key rules, not on every line
+  (from the first real concept, Relay).
+
 ## 0.4.0 — 2026-10-27
 
 From a review of 0.3.0 by ChatGPT, selected and condensed:

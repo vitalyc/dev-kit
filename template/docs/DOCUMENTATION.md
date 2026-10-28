@@ -6,8 +6,9 @@ not evidence of an implemented product.
 ## Discovery
 
 Keep one living docs/PRODUCT_CONCEPT.md while scope and design are still
-being explored. Mark each rule or proposal as Agreed, Proposed, Open,
-Assumption or Implemented. A concept can contain business, domain and
+being explored. Give decisions and key rules a status (Agreed, Proposed,
+Open, Assumption or Implemented); mark the rest as illustrative or not
+finalized where that matters. A concept can contain business, domain and
 technical exploration; its title does not make all of it accepted.
 
 PROJECT is a short entry point: purpose, non-goals, pilot scope, current
